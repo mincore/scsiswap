@@ -1,0 +1,17 @@
+#
+# SCSI driver configuration for bad sector swap
+#
+config SCSI_SWAP_BADSECTORS
+	bool "Bad sectors swap support"
+	depends on SCSI && PROC_FS
+	default n
+	---help---
+	  This option enables support for swap bad sectors
+
+config SCSI_SIM_BADSECTORS
+	bool "Bad sectors simulator support"
+	depends on SCSI_SWAP_BADSECTORS
+	default n
+	---help---
+	  This option enables support for simulate bad sectors
+

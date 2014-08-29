@@ -1,0 +1,71 @@
+			扇区映射数据结构与流程
+				2013/11/28
+		csp <mincore@163.com>
+
+scsi_disk
+   |	
+   +-----scsi_device
+   |	          |
+   +-----gendisk  +----scsi_swap
+                          |
+                          +------gendisk
+                          |
+                          +------kobject
+                          |
+                          +------private_data <=======> swap_handler
+
+private_data <=======> swap_handler
+scsi_swap 是个封装层，通过成员void *private_data, 接口不再和实现耦合,
+    以后可以添加另外一种实现，比如将本硬盘的扇区与其他硬盘的扇区映射。
+
+swap_handler
+   |
+   +------swap_core
+   |         |
+   |         +----------swapped_sectors_list
+   |
+   +------swap_simulater
+   |         |
+   |         +----------simulated_bad_sectors_list
+   |
+   +------swap_logger
+             |
+             +----------logging_ring_buffer
+
+
+1. 在发现磁盘的时候，保留1G扇区
+    sd_read_capacity@sd.c
+
+2. 磁盘加入到sysfs前，初始化坏扇区映射
+    sd_probe_async@sd.c {
+        scsi_swap_init
+        add_disk       // 生成 sdx 到 sysfs
+        sci_swap_register_sysfs
+    }
+
+3. 有读写请求时，先检查时候已被映射
+    generic_make_request@blk-core.c {
+        if (bio_has_bad_block)
+            swap_bio  // 从映射扇区中读，或写入到映射扇区, 结束bio
+    }
+
+4. 读写请求从硬盘返回时，如果有错，创建映射
+    req_bio_endio@blk-core.c {
+        swap_bio    // 创建映射，并结束bio
+    }
+
+5. 模拟坏扇区
+    scsi_done@scsi.c {
+        if (scmd_should_be_bad)
+            scsi_set_bad_result  // 命中模拟的坏扇区列表，将结果置坏
+                                 // 再往上走，会进过步骤4
+    }
+
+6. 扇区映射不再集中管理，而是每个硬盘一个，并且生命周期由对应的scsi_device控制. 
+    每个可以有扇区映射的硬盘，会有目录 /sys/block/sdx/swap
+    里面有文件 swap, log, simulate, logging_level
+    swap：         只读，读出已映射的扇区列表
+    log：          只读，读出扇区创建，修复日志  
+    simultate：    读写，添加或删除坏扇区模拟
+    logging_level  只写，控制打印信息
+
